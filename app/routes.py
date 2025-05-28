@@ -261,6 +261,38 @@ def add_perusahaan():
     finally:
         db.close()
 
+# Get fasilitas per CIF
+@app.route('/perusahaan/<cif>/fasilitas', methods=['GET'])
+@jwt_required()
+def get_fasilitas_by_cif(cif):
+    db = SessionLocal()
+
+    try:
+        perusahaan = db.query(Perusahaan).filter_by(cif=cif).first()
+        if not perusahaan:
+            return jsonify({"error": "Perusahaan not found"}), 404
+
+        fasilitas_list = db.query(Fasilitas).filter_by(cif=cif).all()
+
+        results = []
+        for f in fasilitas_list:
+            results.append({
+                "deal_ref": f.deal_ref,
+                "jenis_fasilitas": f.jenis_fasilitas,
+                "jumlah_outstanding": f.jumlah_outstanding,
+                "tanggal_mulai_macet": f.tanggal_mulai_macet.strftime("%Y-%m-%d") if f.tanggal_mulai_macet else None,
+                "progres_npl": f.progres_npl
+            })
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+# Get semua fasilitas
 @app.route('/fasilitas', methods=['GET'])
 @jwt_required()
 def get_all_fasilitas():
@@ -284,6 +316,7 @@ def get_all_fasilitas():
     finally:
         db.close()
 
+# Nambah Fasilitas
 @app.route('/fasilitas', methods=['POST'])
 @jwt_required()
 def add_fasilitas():
@@ -348,6 +381,7 @@ def parse_date(date_str):
             raise ValueError(f"Invalid date format: {date_str}")
     return None
 
+# Detail fasilitas
 @app.route('/fasilitas/<deal_ref>', methods=['GET'])
 @jwt_required()
 def get_fasilitas_detail(deal_ref):
@@ -397,6 +431,95 @@ def get_fasilitas_detail(deal_ref):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    finally:
+        db.close()
+
+# Update fasilitas
+@app.route('/fasilitas/<deal_ref>', methods=['PUT'])
+@jwt_required()
+def update_fasilitas(deal_ref):
+    db = SessionLocal()
+    data = request.get_json()
+
+    try:
+        fasilitas = db.query(Fasilitas).filter_by(deal_ref=deal_ref).first()
+        if not fasilitas:
+            return jsonify({"error": "Fasilitas not found"}), 404
+
+        # Optional fields
+        if "jenis_fasilitas" in data:
+            fasilitas.jenis_fasilitas = data["jenis_fasilitas"]
+        if "jumlah_outstanding" in data:
+            fasilitas.jumlah_outstanding = data["jumlah_outstanding"]
+        if "tanggal_mulai_macet" in data:
+            fasilitas.tanggal_mulai_macet = parse_date(data["tanggal_mulai_macet"])
+        if "key_person_perusahaan" in data:
+            fasilitas.key_person_perusahaan = data["key_person_perusahaan"]
+        if "progres_npl" in data:
+            fasilitas.progres_npl = data["progres_npl"]
+        if "restruktur_terakhir" in data:
+            fasilitas.restruktur_terakhir = parse_date(data["restruktur_terakhir"])
+        if "jumlah_kredit_recovered" in data:
+            fasilitas.jumlah_kredit_recovered = data["jumlah_kredit_recovered"]
+
+        # AO names -> lookup UID
+        if "ao_komersial" in data:
+            ao_k = db.query(User).filter_by(role=data["AO Komersial"]).first()
+            if not ao_k:
+                return jsonify({"error": "AO Komersial not found"}), 400
+            fasilitas.ao_komersial = ao_k.id
+
+        if "ao_ppk" in data:
+            ao_p = db.query(User).filter_by(role=data["AO PPK"]).first()
+            if not ao_p:
+                return jsonify({"error": "AO PPK not found"}), 400
+            fasilitas.ao_ppk = ao_p.id
+
+        db.commit()
+        return jsonify({"message": "Fasilitas updated successfully"}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+# Update agunan
+@app.route('/fasilitas/<deal_ref>/agunan', methods=['PUT'])
+@jwt_required()
+def update_agunan(deal_ref):
+    db = SessionLocal()
+    data = request.get_json()
+
+    try:
+        # Check that fasilitas exists
+        fasilitas = db.query(Fasilitas).filter_by(deal_ref=deal_ref).first()
+        if not fasilitas:
+            return jsonify({"error": "Fasilitas not found"}), 404
+
+        # Delete existing agunan entries
+        db.query(Agunan).filter_by(deal_ref=deal_ref).delete()
+
+        # Insert new agunan entries
+        new_agunan_list = []
+        for agunan_data in data.get("agunan_list", []):
+            agunan = Agunan(
+                deal_ref=deal_ref,
+                jenis_agunan=agunan_data.get("jenis_agunan"),
+                reappraisal_terakhir=agunan_data.get("reappraisal_terakhir"),
+                tanggal_reappraisal=parse_date(agunan_data.get("tanggal_reappraisal")),
+                status_agunan=agunan_data.get("status_agunan")
+            )
+            new_agunan_list.append(agunan)
+
+        db.add_all(new_agunan_list)
+        db.commit()
+
+        return jsonify({"message": "Agunan updated successfully"}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
     finally:
         db.close()
 
