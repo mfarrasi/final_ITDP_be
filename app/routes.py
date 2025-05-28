@@ -261,6 +261,79 @@ def add_perusahaan():
     finally:
         db.close()
 
+# Update perusahaan
+@app.route('/perusahaan/<cif>', methods=['PUT'])
+@jwt_required()
+def update_perusahaan(cif):
+    db = SessionLocal()
+    data = request.get_json()
+
+    try:
+        perusahaan = db.query(Perusahaan).filter_by(cif=cif).first()
+
+        if not perusahaan:
+            return jsonify({"error": "Perusahaan not found"}), 404
+
+        # Update simple fields
+        if "nama_perusahaan" in data:
+            perusahaan.nama_perusahaan = data["nama_perusahaan"]
+
+        if "total_outstanding" in data:
+            perusahaan.total_outstanding = data["total_outstanding"]
+
+        # Update kantor by name if provided
+        if "kantor_cabang" in data:
+            kantor = db.query(Kantor).filter_by(kantor_cabang=data["kantor_cabang"]).first()
+            if not kantor:
+                return jsonify({"error": "Kantor not found"}), 404
+            perusahaan.kantor_id = kantor.kantor_id
+
+        db.commit()
+        return jsonify({"message": "Perusahaan updated successfully"}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+# Delete perusahan
+@app.route('/perusahaan/<cif>', methods=['DELETE'])
+@jwt_required()
+def delete_perusahaan(cif):
+    db = SessionLocal()
+
+    try:
+        perusahaan = db.query(Perusahaan).filter_by(cif=cif).first()
+
+        if not perusahaan:
+            return jsonify({"error": "Perusahaan not found"}), 404
+
+        # Optional: Delete related fasilitas first (to avoid FK errors)
+        fasilitas_list = db.query(Fasilitas).filter_by(cif=cif).all()
+        for fasilitas in fasilitas_list:
+            # Delete agunan linked to this fasilitas
+            db.query(Agunan).filter_by(deal_ref=fasilitas.deal_ref).delete()
+            # Delete from user_deals if necessary
+            db.query(UserDeals).filter_by(deal_ref=fasilitas.deal_ref).delete()
+            # Delete event_roadmap and history
+            db.query(EventRoadmap).filter_by(deal_ref=fasilitas.deal_ref).delete()
+            db.query(History).filter_by(deal_ref=fasilitas.deal_ref).delete()
+            db.delete(fasilitas)
+
+        db.delete(perusahaan)
+        db.commit()
+
+        return jsonify({"message": "Perusahaan and related data deleted successfully"}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
 # Get fasilitas per CIF
 @app.route('/perusahaan/<cif>/fasilitas', methods=['GET'])
 @jwt_required()
