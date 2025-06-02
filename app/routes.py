@@ -191,6 +191,54 @@ def delete_user():
     finally:
         db.close()
 
+# Get Kantor all
+@app.route('/kantor', methods=['GET'])
+def get_all_kantor():
+    db = SessionLocal()
+    try:
+        kantor_list = db.query(Kantor).all()
+        result = []
+
+        for kantor in kantor_list:
+            result.append({
+                "kantor_id": kantor.kantor_id,
+                "kantor_cabang": kantor.cabang,
+                "kantor_wilayah": kantor.wilayah,
+                "jumlah_total_npl": kantor.jumlah_total_npl
+            })
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+# Get kantor by id
+@app.route('/kantor/<int:kantor_id>', methods=['GET'])
+def get_kantor_by_id(kantor_id):
+    db = SessionLocal()
+    try:
+        kantor = db.query(Kantor).filter_by(kantor_id=kantor_id).first()
+        if not kantor:
+            return jsonify({"error": "Kantor not found"}), 404
+
+        result = {
+            "kantor_id": kantor.kantor_id,
+            "kantor_cabang": kantor.cabang,
+            "kantor_wilayah": kantor.wilayah,
+            "jumlah_total_npl": kantor.jumlah_total_npl
+        }
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
 @app.route('/perusahaan', methods=['GET'])
 @jwt_required()
 def get_perusahaan():
@@ -593,6 +641,117 @@ def update_agunan(deal_ref):
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+# Add History
+@app.route('/history', methods=['POST'])
+@jwt_required()
+def add_history():
+    db = SessionLocal()
+    data = request.get_json()
+
+    try:
+        # Validate required fields
+        required_fields = ["deal_ref", "ao_input", "jenis_kegiatan"]
+        missing = [field for field in required_fields if not data.get(field)]
+        if missing:
+            return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
+
+        # Find AO UID from name
+        user = db.query(User).filter_by(name=data["ao_input"]).first()
+        if not user:
+            return jsonify({"error": "AO (user) not found"}), 404
+
+        new_history = History(
+            deal_ref=data["deal_ref"],
+            jenis_kegiatan=data.get("jenis_kegiatan"),
+            ao_input=user.id,
+            keterangan_kegiatan=data.get("keterangan_kegiatan"),
+            tanggal=data.get("tanggal")
+        )
+
+        db.add(new_history)
+        db.commit()
+
+        return jsonify({"message": "History added successfully"}), 201
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+# Get History bisa filter by AO atau deal ref cuman tambah ?ao_input= / ?deal_ref=
+@app.route('/history', methods=['GET'])
+def get_history():
+    db = SessionLocal()
+    try:
+        # Optional query params
+        deal_ref = request.args.get("deal_ref")
+        ao_name = request.args.get("ao_input")
+
+        query = db.query(History, User.name).join(User, History.ao_input == User.id)
+
+        if deal_ref:
+            query = query.filter(History.deal_ref == deal_ref)
+
+        if ao_name:
+            query = query.filter(User.name.ilike(f"%{ao_name}%"))
+
+        results = query.all()
+
+        history_list = []
+        for history, ao_nama in results:
+            history_list.append({
+                "event_history_id": history.event_history_id,
+                "deal_ref": history.deal_ref,
+                "jenis_kegiatan": history.jenis_kegiatan,
+                "ao_input": ao_nama,
+                "keterangan_kegiatan": history.keterangan_kegiatan,
+                "tanggal": history.tanggal.isoformat() if history.tanggal else None
+            })
+
+        return jsonify(history_list), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+@app.route('/history/<int:event_history_id>', methods=['PUT'])
+def update_history(event_history_id):
+    db = SessionLocal()
+    data = request.get_json()
+
+    try:
+        history = db.query(History).filter_by(event_history_id=event_history_id).first()
+        if not history:
+            return jsonify({"error": "History record not found"}), 404
+
+        if 'deal_ref' in data:
+            history.deal_ref = data['deal_ref']
+        if 'jenis_kegiatan' in data:
+            history.jenis_kegiatan = data['jenis_kegiatan']
+        if 'keterangan_kegiatan' in data:
+            history.keterangan_kegiatan = data['keterangan_kegiatan']
+        if 'tanggal' in data:
+            history.tanggal = data['tanggal']
+        if 'ao_input' in data:
+            ao_user = db.query(User).filter_by(name=data['ao_input']).first()
+            if not ao_user:
+                return jsonify({"error": "AO (user) not found"}), 404
+            history.ao_input = ao_user.id
+
+        db.commit()
+        return jsonify({"message": "History updated successfully"}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+
     finally:
         db.close()
 

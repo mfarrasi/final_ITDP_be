@@ -68,20 +68,12 @@ class Agunan(Base):
 #     update_terakhir = Column(TIMESTAMP)
 #     status_diterima = Column(Boolean)
 
-# # 7. History Table
-# class History(Base):
-#     __tablename__ = "history"
+class History(Base):
+    __tablename__ = "history"
 
-#     event_history_id = Column(Integer, primary_key=True, autoincrement=True)
-#     deal_ref = Column(String(50), ForeignKey("fasilitas.deal_ref"))
-#     jenis_kegiatan = Column(String(255))
-#     ao_input = Column(Integer, ForeignKey("users.uid"))
-#     keterangan_kegiatan = Column(Text)
-#     tanggal = Column(Date)
-
-# # 8. Deal Ownership Table (Many-to-Many)
-# class UserDeals(Base):
-#     __tablename__ = "user_deals"
-
-#     uid = Column(Integer, ForeignKey("users.uid"), primary_key=True)
-#     deal_ref = Column(String(50), ForeignKey("fasilitas.deal_ref"), primary_key=True)
+    event_history_id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_ref = Column(String(50), ForeignKey("fasilitas.deal_ref"))
+    jenis_kegiatan = Column(String(255))
+    ao_input = Column(Integer, ForeignKey("users.id"))
+    keterangan_kegiatan = Column(Text)
+    tanggal = Column(Date)
