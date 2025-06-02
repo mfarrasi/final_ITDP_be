@@ -77,3 +77,4 @@ class History(Base):
     ao_input = Column(Integer, ForeignKey("users.id"))
     keterangan_kegiatan = Column(Text)
     tanggal = Column(Date)
+    status = Column(String(255), default='Berhasil')

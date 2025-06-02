@@ -657,8 +657,6 @@ def add_history():
     data = request.get_json()
     user_id = get_jwt_identity()
 
-    # user = db.query(User).filter_by(id=user_id).first()
-
     try:
         # Validate required fields
         required_fields = ["deal_ref", "jenis_kegiatan"]
@@ -671,7 +669,8 @@ def add_history():
             jenis_kegiatan=data.get("jenis_kegiatan"),
             ao_input=user_id,
             keterangan_kegiatan=data.get("keterangan_kegiatan"),
-            tanggal=data.get("tanggal")
+            tanggal=data.get("tanggal"),
+            status=data.get("status")
         )
 
         db.add(new_history)
@@ -714,10 +713,41 @@ def get_history():
                 "jenis_kegiatan": history.jenis_kegiatan,
                 "ao_input": ao_nama,
                 "keterangan_kegiatan": history.keterangan_kegiatan,
-                "tanggal": history.tanggal.isoformat() if history.tanggal else None
+                "tanggal": history.tanggal.isoformat() if history.tanggal else None,
+                "status": history.status
             })
 
         return jsonify(history_list), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+@app.route('/history/<deal_ref>', methods=['GET'])
+@jwt_required()
+def get_history_by_id(deal_ref):
+    db = SessionLocal()
+    try:
+        histories = db.query(History).filter_by(deal_ref=deal_ref).all()
+        if not histories:
+            return jsonify({"message": "No history records found for this deal_ref"}), 404
+
+        result = []
+        for history in histories:
+            ao = db.query(User).filter_by(id=history.ao_input).first()
+            result.append({
+                "event_history_id": history.event_history_id,
+                "deal_ref": history.deal_ref,
+                "jenis_kegiatan": history.jenis_kegiatan,
+                "ao_input": ao.name if ao else None,
+                "keterangan_kegiatan": history.keterangan_kegiatan,
+                "tanggal": history.tanggal,
+                "status": history.status
+            })
+
+        return jsonify(result), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -747,6 +777,8 @@ def update_history(event_history_id):
             history.tanggal = data['tanggal']
         if 'ao_input' in data:
             history.ao_input = user_id
+        if 'status' in data:
+            history.status = data['status']
 
         db.commit()
         return jsonify({"message": "History updated successfully"}), 200
@@ -758,3 +790,22 @@ def update_history(event_history_id):
     finally:
         db.close()
 
+@app.route('/history/<int:event_history_id>', methods=['DELETE'])
+@jwt_required()
+def delete_history(event_history_id):
+    db = SessionLocal()
+    try:
+        history = db.query(History).filter_by(event_history_id=event_history_id).first()
+        if not history:
+            return jsonify({"error": "History record not found"}), 404
+
+        db.delete(history)
+        db.commit()
+        return jsonify({"message": "History record deleted successfully"}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
