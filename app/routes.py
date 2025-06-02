@@ -246,17 +246,19 @@ def get_perusahaan():
 
     try:
         perusahaan_list = db.query(Perusahaan).options(joinedload(Perusahaan.kantor)).all()
-
         result = []
         for perusahaan in perusahaan_list:
             kantor = db.query(Kantor).filter_by(kantor_id=perusahaan.kantor_id).first()
+            persentase = float(perusahaan.total_outstanding/kantor.jumlah_total_npl) * 100
+            persentase = round(persentase, 2)
             result.append({
                 "cif": perusahaan.cif,
                 "nama_perusahaan": perusahaan.nama_perusahaan,
                 "total_outstanding": float(perusahaan.total_outstanding or 0),
                 "total_npl": float(kantor.jumlah_total_npl) if kantor else None,
                 "kantor_cabang": kantor.cabang if kantor else None,
-                "kantor_wilayah": kantor.wilayah if kantor else None
+                "kantor_wilayah": kantor.wilayah if kantor else None,
+                "persentase_npl": str(persentase)+ "%"
             })
 
         return jsonify(result), 200
@@ -397,12 +399,15 @@ def get_fasilitas_by_cif(cif):
 
         results = []
         for f in fasilitas_list:
+            persentase = float(f.jumlah_outstanding/perusahaan.total_outstanding) * 100
+            persentase = round(persentase, 2)
             results.append({
                 "deal_ref": f.deal_ref,
                 "jenis_fasilitas": f.jenis_fasilitas,
                 "jumlah_outstanding": f.jumlah_outstanding,
                 "tanggal_mulai_macet": f.tanggal_mulai_macet.strftime("%Y-%m-%d") if f.tanggal_mulai_macet else None,
-                "progres_npl": f.progres_npl
+                "progres_npl": f.progres_npl,
+                "persentase": str(persentase) + "%"
             })
 
         return jsonify(results), 200
@@ -650,23 +655,21 @@ def update_agunan(deal_ref):
 def add_history():
     db = SessionLocal()
     data = request.get_json()
+    user_id = get_jwt_identity()
+
+    # user = db.query(User).filter_by(id=user_id).first()
 
     try:
         # Validate required fields
-        required_fields = ["deal_ref", "ao_input", "jenis_kegiatan"]
+        required_fields = ["deal_ref", "jenis_kegiatan"]
         missing = [field for field in required_fields if not data.get(field)]
         if missing:
             return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
-        # Find AO UID from name
-        user = db.query(User).filter_by(name=data["ao_input"]).first()
-        if not user:
-            return jsonify({"error": "AO (user) not found"}), 404
-
         new_history = History(
             deal_ref=data["deal_ref"],
             jenis_kegiatan=data.get("jenis_kegiatan"),
-            ao_input=user.id,
+            ao_input=user_id,
             keterangan_kegiatan=data.get("keterangan_kegiatan"),
             tanggal=data.get("tanggal")
         )
@@ -685,6 +688,7 @@ def add_history():
 
 # Get History bisa filter by AO atau deal ref cuman tambah ?ao_input= / ?deal_ref=
 @app.route('/history', methods=['GET'])
+@jwt_required()
 def get_history():
     db = SessionLocal()
     try:
@@ -722,9 +726,11 @@ def get_history():
         db.close()
 
 @app.route('/history/<int:event_history_id>', methods=['PUT'])
+@jwt_required()
 def update_history(event_history_id):
     db = SessionLocal()
     data = request.get_json()
+    user_id = get_jwt_identity()
 
     try:
         history = db.query(History).filter_by(event_history_id=event_history_id).first()
@@ -740,10 +746,7 @@ def update_history(event_history_id):
         if 'tanggal' in data:
             history.tanggal = data['tanggal']
         if 'ao_input' in data:
-            ao_user = db.query(User).filter_by(name=data['ao_input']).first()
-            if not ao_user:
-                return jsonify({"error": "AO (user) not found"}), 404
-            history.ao_input = ao_user.id
+            history.ao_input = user_id
 
         db.commit()
         return jsonify({"message": "History updated successfully"}), 200
