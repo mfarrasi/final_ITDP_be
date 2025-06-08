@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from app.db import SessionLocal
 from app.models import *
@@ -7,6 +7,9 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import joinedload
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import timedelta, datetime
+from docx import Document
+from io import BytesIO
+from app.summarizer import summarize
 
 app = Flask(__name__)
 CORS(app)
@@ -977,6 +980,7 @@ def update_roadmap_plan_and_events(plan_id):
         db.close()
 
 @app.route("/roadmap-plans/<int:plan_id>", methods=["DELETE"])
+@jwt_required()
 def delete_roadmap_plan(plan_id):
     db = SessionLocal()
 
@@ -1002,6 +1006,7 @@ def delete_roadmap_plan(plan_id):
         db.close()
 
 @app.route("/roadmap-events/<int:event_id>", methods=["DELETE"])
+@jwt_required()
 def delete_roadmap_event(event_id):
     db = SessionLocal()
 
@@ -1021,3 +1026,55 @@ def delete_roadmap_event(event_id):
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
+
+@app.route("/perusahaan/<string:cif>/docx", methods=["GET"])
+def generate_docx(cif):
+    db = SessionLocal()
+    perusahaan = db.query(Perusahaan).filter_by(cif=cif).first()
+
+    if not perusahaan:
+        return {"message": "Perusahaan not found"}, 404
+
+    kantor = db.query(Kantor).filter_by(kantor_id=perusahaan.kantor_id).first()
+    fasilitas_list = db.query(Fasilitas).filter_by(cif=cif).all()
+
+    # Create Word document
+    doc = Document()
+    doc.add_heading('Perusahaan Report', 0)
+
+    doc.add_paragraph(f"CIF: {perusahaan.cif}")
+    doc.add_paragraph(f"Nama Perusahaan: {perusahaan.nama_perusahaan}")
+    doc.add_paragraph(f"Total Outstanding: {perusahaan.total_outstanding}")
+    doc.add_paragraph(f"Kantor Cabang: {kantor.cabang}")
+    doc.add_paragraph(f"Kantor Wilayah: {kantor.wilayah}")
+
+    doc.add_heading('Fasilitas', level=1)
+    table = doc.add_table(rows=1, cols=3)
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'Deal Ref'
+    hdr_cells[1].text = 'Jenis Fasilitas'
+    hdr_cells[2].text = 'Jumlah Outstanding'
+
+    for f in fasilitas_list:
+        row_cells = table.add_row().cells
+        row_cells[0].text = f.deal_ref
+        row_cells[1].text = f.jenis_fasilitas or ""
+        row_cells[2].text = str(f.jumlah_outstanding or "")
+
+    # Save to memory buffer
+    f = BytesIO()
+    doc.save(f)
+    f.seek(0)
+
+    db.close()
+
+    return send_file(
+        f,
+        as_attachment=True,
+        download_name=f"perusahaan_{cif}.docx",
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+@app.route("/summarize", methods=['GET'])
+def summarize_text():
+    return summarize()
