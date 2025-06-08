@@ -1,6 +1,7 @@
-from sqlalchemy import Column, String, Integer, Float, Boolean, Date, ForeignKey, Text, ARRAY, Enum
+from sqlalchemy import Column, String, Integer, Float, Boolean, Date, ForeignKey, Text, ARRAY, Enum, DateTime
 from app.db import Base
 from sqlalchemy.orm import relationship
+from datetime import datetime
 
 class User(Base):
     __tablename__ = "users"
@@ -54,20 +55,6 @@ class Agunan(Base):
     tanggal_reappraisal = Column(Date)
     status_agunan = Column(String(100))
 
-# # 6. Event Roadmap Table
-# class EventRoadmap(Base):
-#     __tablename__ = "event_roadmap"
-
-#     event_roadmap_id = Column(Integer, primary_key=True, autoincrement=True)
-#     jenis_kegiatan = Column(String(255))
-#     ao_input = Column(Integer, ForeignKey("users.uid"))
-#     cif = Column(String(50), ForeignKey("perusahaan.cif"))
-#     deal_ref = Column(String(50), ForeignKey("fasilitas.deal_ref"))
-#     keterangan_kegiatan = Column(Text)
-#     tanggal = Column(Date)
-#     update_terakhir = Column(TIMESTAMP)
-#     status_diterima = Column(Boolean)
-
 class History(Base):
     __tablename__ = "history"
 
@@ -78,3 +65,29 @@ class History(Base):
     keterangan_kegiatan = Column(Text)
     tanggal = Column(Date)
     status = Column(String(255), default='Berhasil')
+
+class RoadmapPlan(Base):
+    __tablename__ = "roadmap_plan"
+
+    plan_id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_ref = Column(String(50), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String(255), default="Pending")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    events = relationship("RoadmapEvent", back_populates="plan", cascade="all, delete")
+
+class RoadmapEvent(Base):
+    __tablename__ = "roadmap_event"
+
+    event_id = Column(Integer, primary_key=True, autoincrement=True)
+    plan_id = Column(Integer, ForeignKey("roadmap_plan.plan_id"), nullable=False)
+    jenis_kegiatan = Column(String(255))
+    ao_input = Column(Integer, ForeignKey("users.id"))
+    cif = Column(String(50), ForeignKey("perusahaan.cif"))
+    keterangan_kegiatan = Column(String)
+    tanggal = Column(DateTime)
+    update_terakhir = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    plan = relationship("RoadmapPlan", back_populates="events")

@@ -809,3 +809,215 @@ def delete_history(event_history_id):
 
     finally:
         db.close()
+
+@app.route("/roadmap-plans", methods=["GET"])
+@jwt_required()
+def get_all_roadmap_plans():
+    db = SessionLocal()
+    try:
+        plans = db.query(RoadmapPlan)
+
+        result = []
+        for plan in plans:
+            ao = db.query(User).filter_by(id=plan.created_by).first()
+            result.append({
+                "plan_id": plan.plan_id,
+                "deal_ref": plan.deal_ref,
+                "status": plan.status,
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at,
+                "created_by": {
+                    "uid": ao.id,
+                    "name": ao.name,
+                    "email": ao.email
+                },
+                "event_count": len(plan.events)
+            })
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route("/roadmap-plans/<int:plan_id>", methods=["GET"])
+@jwt_required()
+def get_events_by_plan(plan_id):
+    db = SessionLocal()
+    try:
+        plan = db.query(RoadmapPlan).filter_by(plan_id=plan_id).first()
+        if not plan:
+            return jsonify({"message": "Roadmap plan not found"}), 404
+
+        events = db.query(RoadmapEvent).filter_by(plan_id=plan_id).all()
+
+        result = []
+        for event in events:
+            result.append({
+                "event_id": event.event_id,
+                "jenis_kegiatan": event.jenis_kegiatan,
+                "ao_input": event.ao_input,
+                "cif": event.cif,
+                "keterangan_kegiatan": event.keterangan_kegiatan,
+                "tanggal": event.tanggal,
+                "update_terakhir": event.update_terakhir
+            })
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route("/roadmap-plans", methods=["POST"])
+@jwt_required()
+def create_roadmap_plan_with_events():
+    db = SessionLocal()
+    data = request.get_json()
+    user_id = get_jwt_identity()
+
+    try:
+        # Required fields
+        deal_ref = data.get("deal_ref")
+        created_by = user_id
+        events = data.get("events", [])  # List of roadmap events
+
+        if not deal_ref or not isinstance(events, list):
+            return jsonify({"message": "Missing required fields"}), 400
+
+        # Create roadmap plan
+        plan = RoadmapPlan(
+            deal_ref=deal_ref,
+            created_by=created_by,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(plan)
+        db.commit()  # Commit to get plan_id
+        db.refresh(plan)
+
+        # Create roadmap events
+        event_objects = []
+        for item in events:
+            event = RoadmapEvent(
+                plan_id=plan.plan_id,
+                jenis_kegiatan=item.get("jenis_kegiatan"),
+                ao_input=user_id,
+                cif=item.get("cif"),
+                keterangan_kegiatan=item.get("keterangan_kegiatan"),
+                tanggal=datetime.strptime(item.get("tanggal"), "%Y-%m-%d") if item.get("tanggal") else None
+            )
+            event_objects.append(event)
+
+        db.add_all(event_objects)
+        db.commit()
+
+        return jsonify({
+            "message": "Roadmap plan and events created successfully.",
+            "plan_id": plan.plan_id,
+            "event_count": len(event_objects)
+        }), 201
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+# Mungkin perlu di fix
+@app.route("/roadmap-plans/<int:plan_id>", methods=["PUT"])
+@jwt_required()
+def update_roadmap_plan_and_events(plan_id):
+    db = SessionLocal()
+    data = request.get_json()
+
+    try:
+        plan = db.query(RoadmapPlan).filter_by(plan_id=plan_id).first()
+        if not plan:
+            return jsonify({"message": "Roadmap plan not found"}), 404
+
+        # --- Update Plan ---
+        if "deal_ref" in data:
+            plan.deal_ref = data["deal_ref"]
+        if "status" in data:
+            plan.status = data["status"]
+        plan.updated_at = datetime.utcnow()
+
+        # --- Update Events ---
+        if "events" in data:
+            for event_data in data["events"]:
+                event_id = event_data.get("event_id")
+                if not event_id:
+                    continue  # skip if no ID provided
+
+                event = db.query(RoadmapEvent).filter_by(event_id=event_id, plan_id=plan_id).first()
+                if not event:
+                    continue  # skip if not found
+
+                # Update fields if present
+                if "jenis_kegiatan" in event_data:
+                    event.jenis_kegiatan = event_data["jenis_kegiatan"]
+                if "cif" in event_data:
+                    event.cif = event_data["cif"]
+                if "keterangan_kegiatan" in event_data:
+                    event.keterangan_kegiatan = event_data["keterangan_kegiatan"]
+                if "tanggal" in event_data:
+                    event.tanggal = datetime.strptime(event_data["tanggal"], "%Y-%m-%d")
+                event.update_terakhir = datetime.utcnow()
+
+        db.commit()
+        return jsonify({"message": "Roadmap plan and events updated successfully."}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route("/roadmap-plans/<int:plan_id>", methods=["DELETE"])
+def delete_roadmap_plan(plan_id):
+    db = SessionLocal()
+
+    try:
+        plan = db.query(RoadmapPlan).filter_by(plan_id=plan_id).first()
+
+        if not plan:
+            return jsonify({"message": "Roadmap plan not found"}), 404
+
+        # Optional: delete associated events first
+        db.query(RoadmapEvent).filter_by(plan_id=plan_id).delete()
+
+        # Then delete the plan
+        db.delete(plan)
+        db.commit()
+
+        return jsonify({"message": "Roadmap plan and associated events deleted successfully."}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route("/roadmap-events/<int:event_id>", methods=["DELETE"])
+def delete_roadmap_event(event_id):
+    db = SessionLocal()
+
+    try:
+        event = db.query(RoadmapEvent).filter_by(event_id=event_id).first()
+
+        if not event:
+            return jsonify({"message": "Roadmap event not found"}), 404
+
+        db.delete(event)
+        db.commit()
+
+        return jsonify({"message": "Roadmap event deleted successfully."}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
