@@ -9,13 +9,26 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from datetime import timedelta, datetime
 from docx import Document
 from io import BytesIO
-from app.summarizer import summarize
+# from app.summarizer import summarize
+import cloudinary
+import cloudinary.uploader
+from cloudinary.utils import cloudinary_url
+
+# Configuration       
+cloudinary.config( 
+    cloud_name = "dhpmkmxfa", 
+    api_key = "297779885711739", 
+    api_secret = "rTz_CTSGrrxkkHEszbitCRoCVLc", # Click 'View API Keys' above to copy your API secret
+    secure=True
+)
 
 app = Flask(__name__)
 CORS(app)
 app.config["JWT_SECRET_KEY"] = "your_secret_key"
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
 jwt = JWTManager(app)
+
+
 
 @app.route("/users", methods=["GET", "POST"])
 def users():
@@ -26,7 +39,7 @@ def users():
             result = [
         {
             "id": user.id,
-            "nama": user.nama,
+            "nama": user.name,
             "email": user.email,
             "password": user.password,
             "role": user.role
@@ -1027,6 +1040,36 @@ def delete_roadmap_event(event_id):
     finally:
         db.close()
 
+@app.route("/roadmap-events/<string:deal_ref>", methods=["GET"])
+def get_events_of_accepted_roadmap_plans(deal_ref):
+    db = SessionLocal()
+    try:
+        events = (
+            db.query(RoadmapEvent)
+            .join(RoadmapPlan)
+            .filter(RoadmapPlan.deal_ref == deal_ref, RoadmapPlan.status == "Accepted", RoadmapEvent.cif == RoadmapPlan.cif)
+            .all()
+        )
+
+        result = []
+        for event in events:
+            result.append({
+                "event_id": event.event_id,
+                "jenis_kegiatan": event.jenis_kegiatan,
+                "tanggal": event.tanggal.strftime('%Y-%m-%d') if event.tanggal else None,
+                "keterangan": event.keterangan_kegiatan,
+                "cif": event.cif,
+                "plan": event.plan.status,
+                "ao_input": event.ao.name
+            })
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
 @app.route("/perusahaan/<string:cif>/docx", methods=["GET"])
 def generate_docx(cif):
     db = SessionLocal()
@@ -1075,6 +1118,22 @@ def generate_docx(cif):
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
-@app.route("/summarize", methods=['GET'])
-def summarize_text():
-    return summarize()
+@app.route('/upload-image', methods=['POST'])
+def upload_image():
+    # Upload an image
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image uploaded'}), 400
+
+    image = request.files['image']
+    result = cloudinary.uploader.upload(
+        image,
+        fetch_format="auto", quality="auto",
+        width=500, height=500, crop="auto", gravity="auto"
+        )
+
+    return jsonify({'url': result['secure_url']}), 200
+
+
+# @app.route("/summarize", methods=['GET'])
+# def summarize_text():
+#     return summarize()

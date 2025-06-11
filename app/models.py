@@ -75,6 +75,7 @@ class RoadmapPlan(Base):
     status = Column(String(255), default="Pending")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    cif = Column(String(50), ForeignKey("perusahaan.cif"))
 
     events = relationship("RoadmapEvent", back_populates="plan", cascade="all, delete")
 
@@ -91,3 +92,4 @@ class RoadmapEvent(Base):
     update_terakhir = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     plan = relationship("RoadmapPlan", back_populates="events")
+    ao = relationship("User", foreign_keys=[ao_input])
