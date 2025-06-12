@@ -680,13 +680,21 @@ def add_history():
         if missing:
             return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
+        image = request.files['image']
+        result = cloudinary.uploader.upload(
+            image,
+            fetch_format="auto", quality="auto",
+            width=500, height=500, crop="auto", gravity="auto"
+            )
+
         new_history = History(
             deal_ref=data["deal_ref"],
             jenis_kegiatan=data.get("jenis_kegiatan"),
             ao_input=user_id,
             keterangan_kegiatan=data.get("keterangan_kegiatan"),
             tanggal=data.get("tanggal"),
-            status=data.get("status")
+            status=data.get("status"),
+            image=result['secure_url']
         )
 
         db.add(new_history)
@@ -897,6 +905,7 @@ def create_roadmap_plan_with_events():
     try:
         # Required fields
         deal_ref = data.get("deal_ref")
+        cif = data.get('cif')
         created_by = user_id
         events = data.get("events", [])  # List of roadmap events
 
@@ -921,7 +930,7 @@ def create_roadmap_plan_with_events():
                 plan_id=plan.plan_id,
                 jenis_kegiatan=item.get("jenis_kegiatan"),
                 ao_input=user_id,
-                cif=item.get("cif"),
+                cif=cif,
                 keterangan_kegiatan=item.get("keterangan_kegiatan"),
                 tanggal=datetime.strptime(item.get("tanggal"), "%Y-%m-%d") if item.get("tanggal") else None
             )
@@ -1120,18 +1129,26 @@ def generate_docx(cif):
 
 @app.route('/upload-image', methods=['POST'])
 def upload_image():
-    # Upload an image
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image uploaded'}), 400
+    db = SessionLocal()
 
-    image = request.files['image']
-    result = cloudinary.uploader.upload(
-        image,
-        fetch_format="auto", quality="auto",
-        width=500, height=500, crop="auto", gravity="auto"
-        )
+    try:
+        # Upload an image
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image uploaded'}), 400
 
-    return jsonify({'url': result['secure_url']}), 200
+        image = request.files['image']
+        result = cloudinary.uploader.upload(
+            image,
+            fetch_format="auto", quality="auto",
+            width=500, height=500, crop="auto", gravity="auto"
+            )
+
+        return jsonify({'url': result['secure_url']}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
 
 
 # @app.route("/summarize", methods=['GET'])
