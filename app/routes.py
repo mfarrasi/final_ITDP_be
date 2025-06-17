@@ -670,31 +670,43 @@ def update_agunan(deal_ref):
 @jwt_required()
 def add_history():
     db = SessionLocal()
-    data = request.get_json()
     user_id = get_jwt_identity()
 
     try:
+        # Use request.form instead of request.get_json()
+        deal_ref = request.form.get("deal_ref")
+        jenis_kegiatan = request.form.get("jenis_kegiatan")
+        keterangan_kegiatan = request.form.get("keterangan_kegiatan")
+        tanggal = request.form.get("tanggal")
+        status = request.form.get("status")
+
         # Validate required fields
-        required_fields = ["deal_ref", "jenis_kegiatan"]
-        missing = [field for field in required_fields if not data.get(field)]
+        required_fields = {"deal_ref": deal_ref, "jenis_kegiatan": jenis_kegiatan}
+        missing = [field for field, value in required_fields.items() if not value]
         if missing:
             return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
-        image = request.files['image']
-        result = cloudinary.uploader.upload(
-            image,
-            fetch_format="auto", quality="auto",
-            width=500, height=500, crop="auto", gravity="auto"
-            )
+        # Check if an image is uploaded
+        image = request.files.get('image')
+        image_url = None
 
+        if image:
+            result = cloudinary.uploader.upload(
+                image,
+                fetch_format="auto", quality="auto",
+                width=500, height=500, crop="auto", gravity="auto"
+            )
+            image_url = result['secure_url']
+
+        # Save to database
         new_history = History(
-            deal_ref=data["deal_ref"],
-            jenis_kegiatan=data.get("jenis_kegiatan"),
+            deal_ref=deal_ref,
+            jenis_kegiatan=jenis_kegiatan,
             ao_input=user_id,
-            keterangan_kegiatan=data.get("keterangan_kegiatan"),
-            tanggal=data.get("tanggal"),
-            status=data.get("status"),
-            image=result['secure_url']
+            keterangan_kegiatan=keterangan_kegiatan,
+            tanggal=tanggal,
+            status=status,
+            image=image_url
         )
 
         db.add(new_history)
@@ -738,7 +750,8 @@ def get_history():
                 "ao_input": ao_nama,
                 "keterangan_kegiatan": history.keterangan_kegiatan,
                 "tanggal": history.tanggal.isoformat() if history.tanggal else None,
-                "status": history.status
+                "status": history.status,
+                "image": history.image
             })
 
         return jsonify(history_list), 200
@@ -749,6 +762,7 @@ def get_history():
     finally:
         db.close()
 
+#get history by deal ref
 @app.route('/history/<deal_ref>', methods=['GET'])
 @jwt_required()
 def get_history_by_id(deal_ref):
@@ -779,6 +793,7 @@ def get_history_by_id(deal_ref):
     finally:
         db.close()
 
+# update history by history id
 @app.route('/history/<int:event_history_id>', methods=['PUT'])
 @jwt_required()
 def update_history(event_history_id):
@@ -814,6 +829,7 @@ def update_history(event_history_id):
     finally:
         db.close()
 
+# delete history by history id
 @app.route('/history/<int:event_history_id>', methods=['DELETE'])
 @jwt_required()
 def delete_history(event_history_id):
@@ -834,6 +850,7 @@ def delete_history(event_history_id):
     finally:
         db.close()
 
+# get all roadmap plan
 @app.route("/roadmap-plans", methods=["GET"])
 @jwt_required()
 def get_all_roadmap_plans():
@@ -865,6 +882,7 @@ def get_all_roadmap_plans():
     finally:
         db.close()
 
+# get roadmap plan by plan id
 @app.route("/roadmap-plans/<int:plan_id>", methods=["GET"])
 @jwt_required()
 def get_events_by_plan(plan_id):
@@ -895,6 +913,7 @@ def get_events_by_plan(plan_id):
     finally:
         db.close()
 
+# add roadmap events nanti jadi 1 plan
 @app.route("/roadmap-plans", methods=["POST"])
 @jwt_required()
 def create_roadmap_plan_with_events():
@@ -952,6 +971,7 @@ def create_roadmap_plan_with_events():
         db.close()
 
 # Mungkin perlu di fix
+# update roadmap plan
 @app.route("/roadmap-plans/<int:plan_id>", methods=["PUT"])
 @jwt_required()
 def update_roadmap_plan_and_events(plan_id):
@@ -1001,6 +1021,7 @@ def update_roadmap_plan_and_events(plan_id):
     finally:
         db.close()
 
+# delete roadmap PLAN by plan id
 @app.route("/roadmap-plans/<int:plan_id>", methods=["DELETE"])
 @jwt_required()
 def delete_roadmap_plan(plan_id):
@@ -1027,6 +1048,7 @@ def delete_roadmap_plan(plan_id):
     finally:
         db.close()
 
+# delete roadmap EVENT by event id
 @app.route("/roadmap-events/<int:event_id>", methods=["DELETE"])
 @jwt_required()
 def delete_roadmap_event(event_id):
@@ -1049,6 +1071,7 @@ def delete_roadmap_event(event_id):
     finally:
         db.close()
 
+# get semua roadmap event by deal ref yang status Accepted
 @app.route("/roadmap-events/<string:deal_ref>", methods=["GET"])
 def get_events_of_accepted_roadmap_plans(deal_ref):
     db = SessionLocal()
@@ -1079,6 +1102,8 @@ def get_events_of_accepted_roadmap_plans(deal_ref):
     finally:
         db.close()
 
+#perlu fix
+# geenerate docs
 @app.route("/perusahaan/<string:cif>/docx", methods=["GET"])
 def generate_docx(cif):
     db = SessionLocal()
@@ -1127,28 +1152,33 @@ def generate_docx(cif):
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
-@app.route('/upload-image', methods=['POST'])
-def upload_image():
-    db = SessionLocal()
+# upload image
+# redundan
+# @app.route('/upload-image', methods=['POST'])
+# def upload_image():
+#     db = SessionLocal()
 
-    try:
-        # Upload an image
-        if 'image' not in request.files:
-            return jsonify({'error': 'No image uploaded'}), 400
+#     try:
+#         # Upload an image
+#         if 'image' not in request.files:
+#             return jsonify({'error': 'No image uploaded'}), 400
 
-        image = request.files['image']
-        result = cloudinary.uploader.upload(
-            image,
-            fetch_format="auto", quality="auto",
-            width=500, height=500, crop="auto", gravity="auto"
-            )
+#         image = request.files['image']
+#         result = cloudinary.uploader.upload(
+#             image,
+#             fetch_format="auto", quality="auto",
+#             width=500, height=500, crop="auto", gravity="auto"
+#             )
+        
+#         db.add(new_history)
+#         db.commit()
 
-        return jsonify({'url': result['secure_url']}), 200
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        db.close()
+#         return jsonify({'url': result['secure_url']}), 200
+#     except Exception as e:
+#         db.rollback()
+#         return jsonify({"error": str(e)}), 500
+#     finally:
+#         db.close()
 
 
 # @app.route("/summarize", methods=['GET'])

@@ -65,6 +65,7 @@ class History(Base):
     keterangan_kegiatan = Column(Text)
     tanggal = Column(Date)
     status = Column(String(255), default='Berhasil')
+    image = Column(Text)
 
 class RoadmapPlan(Base):
     __tablename__ = "roadmap_plan"
