@@ -782,7 +782,8 @@ def get_history_by_id(deal_ref):
                 "ao_input": ao.name if ao else None,
                 "keterangan_kegiatan": history.keterangan_kegiatan,
                 "tanggal": history.tanggal,
-                "status": history.status
+                "status": history.status,
+                "image": history.image
             })
 
         return jsonify(result), 200
@@ -1152,6 +1153,58 @@ def generate_docx(cif):
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
+# get list ao dan kinerja penjualan agunannya
+@app.route('/agunan/status', methods=['GET'])
+@jwt_required()
+def agunan_summary_per_ao():
+    db = SessionLocal()
+
+    try:
+        from sqlalchemy import func, case
+
+        # Subquery: associate each agunan with both AOs (komersial + ppk)
+        ao_agunan = (
+            db.query(
+                User.id.label("ao_id"),
+                User.name.label("ao_name"),
+                case((Agunan.status_agunan == "Terjual", 1), else_=0).label("terjual"),
+                case((Agunan.status_agunan != "Terjual", 1), else_=0).label("belum_terjual")
+            )
+            .join(Fasilitas, (Fasilitas.deal_ref == Agunan.deal_ref))
+            .join(User, (User.id == Fasilitas.ao_ppk))
+            .subquery()
+        )
+
+        # Aggregate counts per AO
+        result = (
+            db.query(
+                ao_agunan.c.ao_id,
+                ao_agunan.c.ao_name,
+                func.sum(ao_agunan.c.terjual).label("count_terjual"),
+                func.sum(ao_agunan.c.belum_terjual).label("count_belum_terjual")
+            )
+            .group_by(ao_agunan.c.ao_id, ao_agunan.c.ao_name)
+            .all()
+        )
+
+        # Format result
+        data = []
+        for ao_id, name, terjual, belum_terjual in result:
+            data.append({
+                "ao_id": ao_id,
+                "ao_name": name,
+                "terjual": terjual,
+                "belum_terjual": belum_terjual
+            })
+
+        return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
 # upload image
 # redundan
 # @app.route('/upload-image', methods=['POST'])
@@ -1179,6 +1232,7 @@ def generate_docx(cif):
 #         return jsonify({"error": str(e)}), 500
 #     finally:
 #         db.close()
+
 
 
 # @app.route("/summarize", methods=['GET'])
