@@ -762,6 +762,37 @@ def get_history():
     finally:
         db.close()
 
+
+# Get History si user
+@app.route('/history/user', methods=['GET'])
+@jwt_required()
+def get_history_si_user():
+    db = SessionLocal()
+    try:
+        user_id = get_jwt_identity()
+        query = db.query(History).filter(History.ao_input == user_id).all()
+
+        history_list = []
+        for history, ao_nama in results:
+            history_list.append({
+                "event_history_id": history.event_history_id,
+                "deal_ref": history.deal_ref,
+                "jenis_kegiatan": history.jenis_kegiatan,
+                "ao_input": ao_nama,
+                "keterangan_kegiatan": history.keterangan_kegiatan,
+                "tanggal": history.tanggal.isoformat() if history.tanggal else None,
+                "status": history.status,
+                "image": history.image
+            })
+
+        return jsonify(history_list), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
 #get history by deal ref
 @app.route('/history/<deal_ref>', methods=['GET'])
 @jwt_required()
@@ -1168,7 +1199,8 @@ def agunan_summary_per_ao():
                 User.id.label("ao_id"),
                 User.name.label("ao_name"),
                 case((Agunan.status_agunan == "Terjual", 1), else_=0).label("terjual"),
-                case((Agunan.status_agunan != "Terjual", 1), else_=0).label("belum_terjual")
+                case((Agunan.status_agunan != "Terjual", 1), else_=0).label("belum_terjual"),
+                case((Agunan.status_agunan == "Terjual", Agunan.reappraisal_terakhir), else_=0).label("jumlah_terjual")
             )
             .join(Fasilitas, (Fasilitas.deal_ref == Agunan.deal_ref))
             .join(User, (User.id == Fasilitas.ao_ppk))
@@ -1181,7 +1213,8 @@ def agunan_summary_per_ao():
                 ao_agunan.c.ao_id,
                 ao_agunan.c.ao_name,
                 func.sum(ao_agunan.c.terjual).label("count_terjual"),
-                func.sum(ao_agunan.c.belum_terjual).label("count_belum_terjual")
+                func.sum(ao_agunan.c.belum_terjual).label("count_belum_terjual"),
+                func.sum(ao_agunan.c.jumlah_terjual).label("total_jumlah_terjual")
             )
             .group_by(ao_agunan.c.ao_id, ao_agunan.c.ao_name)
             .all()
@@ -1189,12 +1222,13 @@ def agunan_summary_per_ao():
 
         # Format result
         data = []
-        for ao_id, name, terjual, belum_terjual in result:
+        for ao_id, name, terjual, belum_terjual, jumlah_terjual in result:
             data.append({
                 "ao_id": ao_id,
                 "ao_name": name,
                 "terjual": terjual,
-                "belum_terjual": belum_terjual
+                "belum_terjual": belum_terjual,
+                "total_jumlah_terjual": float(jumlah_terjual or 0)
             })
 
         return jsonify(data), 200
