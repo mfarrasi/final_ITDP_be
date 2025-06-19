@@ -9,7 +9,7 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from datetime import timedelta, datetime
 from docx import Document
 from io import BytesIO
-# from app.summarizer import summarize
+from app.summarizer import summarize
 import cloudinary
 import cloudinary.uploader
 from cloudinary.utils import cloudinary_url
@@ -914,6 +914,38 @@ def get_all_roadmap_plans():
     finally:
         db.close()
 
+# get all roadmap plan SI USER
+@app.route("/roadmap-plans/user", methods=["GET"])
+@jwt_required()
+def get_all_roadmap_plans_si_user():
+    db = SessionLocal()
+    user_id = get_jwt_identity()
+    try:
+        plans = db.query(RoadmapPlan).filter(RoadmapPlan.created_by == user_id).all()
+        result = []
+        for plan in plans:
+            ao = db.query(User).filter_by(id=plan.created_by).first()
+            result.append({
+                "plan_id": plan.plan_id,
+                "deal_ref": plan.deal_ref,
+                "status": plan.status,
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at,
+                "created_by": {
+                    "uid": ao.id,
+                    "name": ao.name,
+                    "email": ao.email
+                },
+                "event_count": len(plan.events)
+            })
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
 # get roadmap plan by plan id
 @app.route("/roadmap-plans/<int:plan_id>", methods=["GET"])
 @jwt_required()
@@ -1269,6 +1301,6 @@ def agunan_summary_per_ao():
 
 
 
-# @app.route("/summarize", methods=['GET'])
-# def summarize_text():
-#     return summarize()
+@app.route("/summarize", methods=['GET'])
+def summarize_text():
+    return summarize()
